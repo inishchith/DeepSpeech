@@ -11,7 +11,10 @@
 %include "std_string.i"
 %import "decoder_utils.h"
 
-namespace std {
+using std::string;
+using std::vector;
+
+std {
     %template(DoubleVector) std::vector<double>;
     %template(IntVector) std::vector<int>;
     %template(StringVector) std::vector<std::string>;

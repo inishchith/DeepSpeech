@@ -10,6 +10,7 @@ import re
 import soundfile
 import resampy
 from scipy import signal
+from six import string_types
 import random
 import copy
 import io
@@ -66,7 +67,7 @@ class AudioSegment(object):
         :return: Audio segment instance.
         :rtype: AudioSegment
         """
-        if isinstance(file, basestring) and re.findall(r".seqbin_\d+$", file):
+        if isinstance(file, string_types) and re.findall(r".seqbin_\d+$", file):
             return cls.from_sequence_file(file)
         else:
             samples, sample_rate = soundfile.read(file, dtype='float32')

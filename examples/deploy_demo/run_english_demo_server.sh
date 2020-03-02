@@ -5,7 +5,7 @@ cd ../.. > /dev/null
 
 # download language model
 cd models/lm > /dev/null
-bash download_lm_en.sh
+#bash download_lm_en.sh
 if [ $? -ne 0 ]; then
     exit 1
 fi
@@ -14,7 +14,7 @@ cd - > /dev/null
 
 # download well-trained model
 cd models/baidu_en8k > /dev/null
-bash download_model.sh
+# bash download_model.sh
 if [ $? -ne 0 ]; then
     exit 1
 fi
@@ -34,7 +34,7 @@ python -u deploy/demo_server.py \
 --cutoff_prob=1.0 \
 --cutoff_top_n=40 \
 --use_gru=True \
---use_gpu=True \
+--use_gpu=False \
 --share_rnn_weights=False \
 --speech_save_dir='demo_cache' \
 --warmup_manifest='data/tiny/manifest.test-clean' \
@@ -42,7 +42,7 @@ python -u deploy/demo_server.py \
 --vocab_path='models/baidu_en8k/vocab.txt' \
 --model_path='models/baidu_en8k' \
 --lang_model_path='models/lm/common_crawl_00.prune01111.trie.klm' \
---decoding_method='ctc_beam_search' \
+--decoding_method='ctc_greedy' \
 --specgram_type='linear'
 
 if [ $? -ne 0 ]; then

@@ -8,7 +8,6 @@ import codecs
 import os
 import tarfile
 import time
-from Queue import Queue
 from threading import Thread
 from multiprocessing import Process, Manager, Value
 from paddle.dataset.common import md5file

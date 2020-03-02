@@ -5,7 +5,6 @@ import random
 import argparse
 import functools
 from time import gmtime, strftime
-import SocketServer
 import struct
 import wave
 import paddle.fluid as fluid
@@ -64,63 +63,6 @@ add_arg('specgram_type',    str,
         choices=['linear', 'mfcc'])
 # yapf: disable
 args = parser.parse_args()
-
-
-class AsrTCPServer(SocketServer.TCPServer):
-    """The ASR TCP Server."""
-
-    def __init__(self,
-                 server_address,
-                 RequestHandlerClass,
-                 speech_save_dir,
-                 audio_process_handler,
-                 bind_and_activate=True):
-        self.speech_save_dir = speech_save_dir
-        self.audio_process_handler = audio_process_handler
-        SocketServer.TCPServer.__init__(
-            self, server_address, RequestHandlerClass, bind_and_activate=True)
-
-
-class AsrRequestHandler(SocketServer.BaseRequestHandler):
-    """The ASR request handler."""
-
-    def handle(self):
-        # receive data through TCP socket
-        chunk = self.request.recv(1024)
-        target_len = struct.unpack('>i', chunk[:4])[0]
-        data = chunk[4:]
-        while len(data) < target_len:
-            chunk = self.request.recv(1024)
-            data += chunk
-        # write to file
-        filename = self._write_to_file(data)
-
-        print("Received utterance[length=%d] from %s, saved to %s." %
-              (len(data), self.client_address[0], filename))
-        start_time = time.time()
-        transcript = self.server.audio_process_handler(filename)
-        finish_time = time.time()
-        print("Response Time: %f, Transcript: %s" %
-              (finish_time - start_time, transcript))
-        self.request.sendall(transcript.encode('utf-8'))
-
-    def _write_to_file(self, data):
-        # prepare save dir and filename
-        if not os.path.exists(self.server.speech_save_dir):
-            os.mkdir(self.server.speech_save_dir)
-        timestamp = strftime("%Y%m%d%H%M%S", gmtime())
-        out_filename = os.path.join(
-            self.server.speech_save_dir,
-            timestamp + "_" + self.client_address[0] + ".wav")
-        # write to wav file
-        file = wave.open(out_filename, 'wb')
-        file.setnchannels(1)
-        file.setsampwidth(4)
-        file.setframerate(16000)
-        file.writeframes(data)
-        file.close()
-        return out_filename
-
 
 def warm_up_test(audio_process_handler,
                  manifest_path,
@@ -194,6 +136,7 @@ def start_server():
             infer_data=feature,
             feeding_dict=data_generator.feeding)
 
+        print("*"*100)
         if args.decoding_method == "ctc_greedy":
             result_transcript = ds2_model.decode_batch_greedy(
                 probs_split=probs_split,
@@ -208,29 +151,18 @@ def start_server():
                 cutoff_top_n=args.cutoff_top_n,
                 vocab_list=vocab_list,
                 num_processes=1)
+        print("*"*100)
+        print(result_transcript)
         return result_transcript[0]
 
     # warming up with utterrances sampled from Librispeech
     print('-----------------------------------------------------------')
     print('Warming up ...')
-    warm_up_test(
-        audio_process_handler=file_to_transcript,
-        manifest_path=args.warmup_manifest,
-        num_test_cases=3)
+    print(file_to_transcript("/home/Nishchith/audio_samples/test-pravar_2.wav"))
     print('-----------------------------------------------------------')
 
-    # start the server
-    server = AsrTCPServer(
-        server_address=(args.host_ip, args.host_port),
-        RequestHandlerClass=AsrRequestHandler,
-        speech_save_dir=args.speech_save_dir,
-        audio_process_handler=file_to_transcript)
-    print("ASR Server Started.")
-    server.serve_forever()
-
-
 def main():
-    print_arguments(args)
+    print(args)
     start_server()
 
 

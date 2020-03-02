@@ -5,6 +5,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from six import string_types
+
 import random
 import tarfile
 import multiprocessing
@@ -111,7 +113,7 @@ class DataGenerator(object):
                  where transcription part could be token ids or text.
         :rtype: tuple of (2darray, list)
         """
-        if isinstance(audio_file, basestring) and audio_file.startswith('tar:'):
+        if isinstance(audio_file, string_types) and audio_file.startswith('tar:'):
             speech_segment = SpeechSegment.from_file(
                 self._subfile_from_tar(audio_file), transcript)
         else:

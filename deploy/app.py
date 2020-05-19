@@ -59,6 +59,12 @@ def warm_up_test(audio_process_handler,
 
 
 def start_server(args):
+    print(args)
+
+    if args.decoder in ["ctc_greedy", "ctc_beam_search"]:
+        global decoding_method
+        decoding_method = args.decoder
+
     """Start the ASR server"""
     # prepare data generator
     if use_gpu:
@@ -200,7 +206,16 @@ def main():
         help="Model path",
     )
 
+    parser.add_argument(
+        "--decoder",
+        default="ctc_greedy",
+        type=str,
+        help="Model path",
+    )
+    
     args = parser.parse_args()
+
+    print(args)
     start_server(args)
 
 

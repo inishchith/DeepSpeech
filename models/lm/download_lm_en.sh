@@ -8,7 +8,11 @@ TARGET=./common_crawl_00.prune01111.trie.klm
 
 
 echo "Download language model ..."
-download $URL $MD5 $TARGET
+if [ -f "$TARGET" ]; then
+    echo "$TARGET exist"
+else
+    download $URL $MD5 $TARGET
+fi   
 if [ $? -ne 0 ]; then
     echo "Fail to download the language model!"
     exit 1
@@ -16,3 +20,4 @@ fi
 
 
 exit 0
+

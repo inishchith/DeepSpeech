@@ -517,7 +517,6 @@ class DeepSpeech2Model(object):
         :rtype: List of basestring
         """
         if self._ext_scorer != None:
-            print("YES")
             self._ext_scorer.reset_params(beam_alpha, beam_beta)
         # beam search decode
         num_processes = min(num_processes, len(probs_split))

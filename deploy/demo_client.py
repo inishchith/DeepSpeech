@@ -51,12 +51,14 @@ def callback(in_data, frame_count, time_info, status):
         # Connect to server and send data
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((args.host_ip, args.host_port))
-        sent = ''.join(data_list)
-        sock.sendall(struct.pack('>i', len(sent)) + sent)
+        sent = b''.join(data_list)
+        x = struct.pack('>i', len(sent)) + sent
+        print(len(x))
+        sock.sendall(x)
         print('Speech[length=%d] Sent.' % len(sent))
         # Receive data from the server and shut down
         received = sock.recv(1024)
-        print "Recognition Results: {}".format(received)
+        print("Recognition Results: {}".format(received))
         sock.close()
         data_list = []
     enable_trigger_record = True

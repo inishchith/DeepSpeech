@@ -118,7 +118,7 @@ def ctc_beam_search_decoder_batch(probs_split,
         probs_split, vocabulary, beam_size, num_processes, cutoff_prob,
         cutoff_top_n, ext_scoring_func)
     batch_beam_results = [
-        [(res[0], res[1].decode("utf-8")) for res in beam_results]
+        [(res[0], res[1]) for res in beam_results]
         for beam_results in batch_beam_results
     ]
     return batch_beam_results

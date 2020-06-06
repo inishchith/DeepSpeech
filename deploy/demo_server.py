@@ -5,6 +5,7 @@ import random
 import argparse
 import functools
 from time import gmtime, strftime
+import socketserver
 import struct
 import wave
 import paddle.fluid as fluid
@@ -22,14 +23,14 @@ add_arg('host_port',        int,    8086,    "Server's IP port.")
 add_arg('beam_size',        int,    500,    "Beam search width.")
 add_arg('num_conv_layers',  int,    2,      "# of convolution layers.")
 add_arg('num_rnn_layers',   int,    3,      "# of recurrent layers.")
-add_arg('rnn_layer_size',   int,    2048,   "# of recurrent cells per layer.")
+add_arg('rnn_layer_size',   int,    1024,   "# of recurrent cells per layer.")
 add_arg('alpha',            float,  2.5,   "Coef of LM for beam search.")
 add_arg('beta',             float,  0.3,   "Coef of WC for beam search.")
 add_arg('cutoff_prob',      float,  1.0,    "Cutoff probability for pruning.")
 add_arg('cutoff_top_n',     int,    40,     "Cutoff number for pruning.")
-add_arg('use_gru',          bool,   False,  "Use GRUs instead of simple RNNs.")
-add_arg('use_gpu',          bool,   True,   "Use GPU or not.")
-add_arg('share_rnn_weights',bool,   True,   "Share input-hidden weights across "
+add_arg('use_gru',          bool,   True,  "Use GRUs instead of simple RNNs.")
+add_arg('use_gpu',          bool,   False,   "Use GPU or not.")
+add_arg('share_rnn_weights',bool,   False,   "Share input-hidden weights across "
                                             "bi-directional RNNs. Not for GRU.")
 add_arg('host_ip',          str,
         'localhost',
@@ -38,20 +39,20 @@ add_arg('speech_save_dir',  str,
         'demo_cache',
         "Directory to save demo audios.")
 add_arg('warmup_manifest',  str,
-        'data/librispeech/manifest.test-clean',
+        'data/baidu_en8k/manifest.dev-clean',
         "Filepath of manifest to warm up.")
 add_arg('mean_std_path',    str,
-        'data/librispeech/mean_std.npz',
+        'models/baidu_en8k/mean_std.npz',
         "Filepath of normalizer's mean & std.")
 add_arg('vocab_path',       str,
-        'data/librispeech/eng_vocab.txt',
+        'models/baidu_en8k/vocab.txt',
         "Filepath of vocabulary.")
 add_arg('model_path',       str,
-        './checkpoints/libri/step_final',
+        'checkpoints/baidu/step_final',
         "If None, the training starts from scratch, "
         "otherwise, it resumes from the pre-trained model.")
 add_arg('lang_model_path',  str,
-        'lm/data/common_crawl_00.prune01111.trie.klm',
+        'models/lm/common_crawl_00.prune01111.trie.klm',
         "Filepath for language model.")
 add_arg('decoding_method',  str,
         'ctc_beam_search',
@@ -63,6 +64,63 @@ add_arg('specgram_type',    str,
         choices=['linear', 'mfcc'])
 # yapf: disable
 args = parser.parse_args()
+
+
+class AsrTCPServer(socketserver.TCPServer):
+    """The ASR TCP Server."""
+
+    def __init__(self,
+                 server_address,
+                 RequestHandlerClass,
+                 speech_save_dir,
+                 audio_process_handler,
+                 bind_and_activate=True):
+        self.speech_save_dir = speech_save_dir
+        self.audio_process_handler = audio_process_handler
+        socketserver.TCPServer.__init__(
+            self, server_address, RequestHandlerClass, bind_and_activate=True)
+
+
+class AsrRequestHandler(socketserver.BaseRequestHandler):
+    """The ASR request handler."""
+
+    def handle(self):
+        # receive data through TCP socket
+        chunk = self.request.recv(1024)
+        target_len = struct.unpack('>i', chunk[:4])[0]
+        data = chunk[4:]
+        while len(data) < target_len:
+            chunk = self.request.recv(1024)
+            data += chunk
+        # write to file
+        filename = self._write_to_file(data)
+
+        print("Received utterance[length=%d] from %s, saved to %s." %
+              (len(data), self.client_address[0], filename))
+        start_time = time.time()
+        transcript = self.server.audio_process_handler(filename)
+        finish_time = time.time()
+        print("Response Time: %f, Transcript: %s" %
+              (finish_time - start_time, transcript))
+        self.request.sendall(transcript.encode('utf-8'))
+
+    def _write_to_file(self, data):
+        # prepare save dir and filename
+        if not os.path.exists(self.server.speech_save_dir):
+            os.mkdir(self.server.speech_save_dir)
+        timestamp = strftime("%Y%m%d%H%M%S", gmtime())
+        out_filename = os.path.join(
+            self.server.speech_save_dir,
+            timestamp + "_" + self.client_address[0] + ".wav")
+        # write to wav file
+        file = wave.open(out_filename, 'wb')
+        file.setnchannels(1)
+        file.setsampwidth(4)
+        file.setframerate(16000)
+        file.writeframes(data)
+        file.close()
+        return out_filename
+
 
 def warm_up_test(audio_process_handler,
                  manifest_path,
@@ -108,7 +166,7 @@ def start_server():
         place=place,
         share_rnn_weights=args.share_rnn_weights)
 
-    vocab_list = [chars.encode("utf-8") for chars in data_generator.vocab_list]
+    vocab_list = data_generator.vocab_list
 
     if args.decoding_method == "ctc_beam_search":
         ds2_model.init_ext_scorer(args.alpha, args.beta, args.lang_model_path,
@@ -136,7 +194,6 @@ def start_server():
             infer_data=feature,
             feeding_dict=data_generator.feeding)
 
-        print("*"*100)
         if args.decoding_method == "ctc_greedy":
             result_transcript = ds2_model.decode_batch_greedy(
                 probs_split=probs_split,
@@ -151,18 +208,29 @@ def start_server():
                 cutoff_top_n=args.cutoff_top_n,
                 vocab_list=vocab_list,
                 num_processes=1)
-        print("*"*100)
-        print(result_transcript)
         return result_transcript[0]
 
     # warming up with utterrances sampled from Librispeech
     print('-----------------------------------------------------------')
     print('Warming up ...')
-    print(file_to_transcript("/home/Nishchith/audio_samples/test-pravar_2.wav"))
+    warm_up_test(
+        audio_process_handler=file_to_transcript,
+        manifest_path=args.warmup_manifest,
+        num_test_cases=3)
     print('-----------------------------------------------------------')
 
+    # start the server
+    server = AsrTCPServer(
+        server_address=(args.host_ip, args.host_port),
+        RequestHandlerClass=AsrRequestHandler,
+        speech_save_dir=args.speech_save_dir,
+        audio_process_handler=file_to_transcript)
+    print("ASR Server Started.")
+    server.serve_forever()
+
+
 def main():
-    print(args)
+    print_arguments(args)
     start_server()
 
 

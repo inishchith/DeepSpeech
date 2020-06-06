@@ -5,8 +5,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from six import string_types
-
 import random
 import tarfile
 import multiprocessing
@@ -113,7 +111,7 @@ class DataGenerator(object):
                  where transcription part could be token ids or text.
         :rtype: tuple of (2darray, list)
         """
-        if isinstance(audio_file, string_types) and audio_file.startswith('tar:'):
+        if isinstance(audio_file, str) and audio_file.startswith('tar:'):
             speech_segment = SpeechSegment.from_file(
                 self._subfile_from_tar(audio_file), transcript)
         else:
@@ -122,7 +120,7 @@ class DataGenerator(object):
         specgram, transcript_part = self._speech_featurizer.featurize(
             speech_segment, self._keep_transcription_text)
         specgram = self._normalizer.apply(specgram)
-        return specgram, transcript_part
+        return specgram, transcript_part, audio_file
 
     def batch_reader_creator(self,
                              manifest_path,
@@ -296,7 +294,7 @@ class DataGenerator(object):
         """
         new_batch = []
         # get target shape
-        max_length = max([audio.shape[1] for audio, text in batch])
+        max_length = max([audio.shape[1] for audio, text, audio_file_path in batch])
         if padding_to != -1:
             if padding_to < max_length:
                 raise ValueError("If padding_to is not -1, it should be larger "
@@ -307,7 +305,9 @@ class DataGenerator(object):
         texts, text_lens = [], []
         audio_lens = []
         masks = []
-        for audio, text in batch:
+        audio_file_paths = []
+        for audio, text, audio_file_path in batch:
+            audio_file_paths.append(audio_file_path)
             padded_audio = np.zeros([audio.shape[0], max_length])
             padded_audio[:, :audio.shape[1]] = audio
             if flatten:
@@ -338,7 +338,7 @@ class DataGenerator(object):
                 texts, recursive_seq_lens=[text_lens], place=self._place)
         audio_lens = np.array(audio_lens).astype('int64').reshape([-1, 1])
         masks = np.array(masks).astype('float32')
-        return padded_audios, texts, audio_lens, masks
+        return padded_audios, texts, audio_lens, masks, audio_file_paths
 
     def _batch_shuffle(self, manifest, batch_size, clipped=False):
         """Put similarly-sized instances into minibatches for better efficiency
